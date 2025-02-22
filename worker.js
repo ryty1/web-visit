@@ -168,15 +168,15 @@ function htmlPage() {
         }
         function getStatusMessage(statusCode) {
           const statusMessages = {
-            200: "保活成功",
-            400: "保活失败",
-            401: "保活失败",
+            200: "访问成功",
+            400: "访问失败",
+            401: "访问失败",
             403: "账号已封禁",
             404: "未安装账号服务",
-            500: "保活失败",
-            502: "保活失败",
-            503: "保活失败",
-            504: "保活失败"
+            500: "访问失败",
+            502: "访问失败",
+            503: "访问失败",
+            504: "访问失败"
           };
           return statusMessages[statusCode];
         }
