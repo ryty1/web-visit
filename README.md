@@ -5,8 +5,8 @@
    项目绑定kv空间
 | 项目          | 值                  |
 |-------------|------------------|
-| Binding Name | LOGIN_STATUS    |
-| Namespace   | LOGIN_STATUS |
+| KV空间命名 | LOGIN_STATUS    |
+| 绑定名称   | LOGIN_STATUS |
 
 ## 3.	在 Worker 的 Variables 里设置环境变量
 
@@ -20,6 +20,7 @@
 
 ## 4.	设置 触发事件-Cloudflare Cron Triggers
    •	Cron 表达式：*/5 * * * *（每 5 分钟执行）自行设置数值
+
    •	Cloudflare 会定期运行 Worker，自动检测状态。
 
 ## 5.	查看记录
