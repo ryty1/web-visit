@@ -109,7 +109,7 @@ async function getHistory(env) {
 async function sendTelegramAlert(user, targetUrl, statusCode, statusMessage, env) {
   const botToken = env.TG_BOT_TOKEN;
   const chatId = env.TG_CHAT_ID;
-  const timestamp = new Date().toISOString().replace("T", " ").split(".")[0];
+  const timestamp = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
 
   const message = `🔴 CF访问失败通知：
 ——————————————
