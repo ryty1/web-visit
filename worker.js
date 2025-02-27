@@ -1,15 +1,22 @@
 export default {
+  // 定义 Cron Triggers 的事件处理程序
   async scheduled(event, env, ctx) {
+    // 每次 Cron 触发时执行的代码
     const user = env.USER_SERV00;
     const kvKey = `status:${user}`;
     const historyKey = `history:${user}`;
     const targetUrl = `https://${user}.serv00.net/login`;
+
     console.log(`[${new Date().toISOString()}] 定时任务触发，检查状态：${targetUrl}`);
+
+    // 调用检查登录状态的函数
     await checkLoginStatus(targetUrl, kvKey, historyKey, env);
   },
+
+  // 请求处理
   async fetch(request, env) {
     if (request.url.includes('/history')) {
-      return getHistory(env); 
+      return getHistory(env); // 返回历史记录
     } else {
       return new Response(htmlPage(), {
         headers: { "Content-Type": "text/html" },
@@ -17,9 +24,11 @@ export default {
     }
   }
 };
+
+// 状态码映射到中文标识
 const statusMessages = {
   200: "访问成功",
-  301: "账号己封",
+  301: "账号未注册",
   302: "访问成功",
   400: "请求失败",
   401: "请求失败",
@@ -30,51 +39,92 @@ const statusMessages = {
   503: "请求失败",
   504: "请求失败"
 };
+
+// 检查登录页面状态并记录
 async function checkLoginStatus(targetUrl, kvKey, historyKey, env) {
   try {
+    // 访问目标 URL
     const response = await fetch(targetUrl);
     const statusCode = response.status;
+
+    // 确保状态码存在于映射表中
     const statusMessage = statusMessages[statusCode] || `未知状态 (${statusCode})`;
+
+    // 获取上次的状态码
     const previousStatus = await env.LOGIN_STATUS.get(kvKey);
     console.log(`[${new Date().toISOString()}] ${targetUrl} - 状态码: ${statusCode} (${statusMessage}) (之前: ${previousStatus || '无'})`);
+
+    // 记录历史状态
     await updateHistory(historyKey, statusCode, env);
-    if (statusCode !== 200) {
-      await sendTelegramAlert(targetUrl, statusCode, statusMessage, env);
+
+    // 如果状态码不是 200，则发送 Telegram 通知
+    if (statusCode !== 200 && statusCode !== 302) {
+      const user = env.USER_SERV00;
+      await sendTelegramAlert(user, targetUrl, statusCode, statusMessage, env);
     }
+
+    // 更新当前状态码
     await env.LOGIN_STATUS.put(kvKey, String(statusCode));  
+
     return new Response(`检测完成: ${targetUrl} - 状态码: ${statusCode} - ${statusMessage}`, { status: statusCode });
+
   } catch (error) {
     console.error("访问失败:", error);
-    await sendTelegramAlert(targetUrl, "请求失败", "无法访问", env);
+    const user = env.USER_SERV00;
+    await sendTelegramAlert(user, targetUrl, "请求失败", "无法访问", env);
     return new Response("请求失败", { status: 500 });
   }
 }
+
+// 更新历史状态
 async function updateHistory(historyKey, statusCode, env) {
   const maxHistory = 10;
   let history = await env.LOGIN_STATUS.get(historyKey);
   history = history ? JSON.parse(history) : [];
+
+  // 添加新记录
   history.push({ time: new Date().toISOString(), status: statusCode });
+
+  // 保持最多的历史记录数
   if (history.length > maxHistory) history.shift();
+
+  // 更新历史记录到 KV 存储
   await env.LOGIN_STATUS.put(historyKey, JSON.stringify(history));
 }
+
+// 获取历史记录
 async function getHistory(env) {
   const user = env.USER_SERV00;
   const historyKey = `history:${user}`;
+
   let history = await env.LOGIN_STATUS.get(historyKey);
   history = history ? JSON.parse(history) : [];
+
   return new Response(JSON.stringify(history), {
     headers: { "Content-Type": "application/json" },
   });
 }
-async function sendTelegramAlert(targetUrl, statusCode, statusMessage, env) {
+
+// 发送 Telegram 通知
+async function sendTelegramAlert(user, targetUrl, statusCode, statusMessage, env) {
   const botToken = env.TG_BOT_TOKEN;
   const chatId = env.TG_CHAT_ID;
-  const message = `⚠️ 状态变化\nURL: ${targetUrl}\n新状态: ${statusCode} - ${statusMessage}`;
+  const timestamp = new Date().toISOString().replace("T", " ").split(".")[0];
+
+  const message = `🔴 CF访问失败通知：
+——————————————
+👤 账号: ${user}
+📶 状态: ${statusCode}
+📝 详情: ${statusMessage}
+——————————————
+🕒 时间: ${timestamp}`;
+
   const tgUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
   const payload = {
     chat_id: chatId,
     text: message,
   };
+
   try {
     await fetch(tgUrl, {
       method: "POST",
@@ -85,6 +135,8 @@ async function sendTelegramAlert(targetUrl, statusCode, statusMessage, env) {
     console.error("Telegram 发送失败:", error);
   }
 }
+
+// HTML 页面内容
 function htmlPage() {
   return `
     <!DOCTYPE html>
@@ -100,9 +152,11 @@ function htmlPage() {
           margin: 0;
           padding: 20px;
         }
+
         h1 {
           text-align: center;
         }
+
         .container {
           max-width: 800px;
           margin: 0 auto;
@@ -110,21 +164,26 @@ function htmlPage() {
           background-color: #fff;
           box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
+
         table {
           width: 100%;
           border-collapse: collapse;
           margin-top: 20px;
         }
+
         table, th, td {
           border: 1px solid #ddd;
         }
+
         th, td {
           padding: 10px;
           text-align: left;
         }
+
         th {
           background-color: #f2f2f2;
         }
+
         .loading {
           text-align: center;
           font-size: 18px;
@@ -146,16 +205,21 @@ function htmlPage() {
           <tbody></tbody>
         </table>
       </div>
+
       <script>
         async function fetchHistory() {
           const response = await fetch("/history");
           if (response.ok) {
             const history = await response.json();
             const tableBody = document.querySelector("#historyTable tbody");
+
+            // 清空表格
             tableBody.innerHTML = "";
+
             if (history.length === 0) {
               tableBody.innerHTML = "<tr><td colspan='2'>没有记录</td></tr>";
             } else {
+              // 倒序排列历史记录
               history.reverse();
               history.forEach(item => {
                 const row = document.createElement("tr");
@@ -168,17 +232,20 @@ function htmlPage() {
             alert("加载历史记录失败");
           }
         }
+
         function getStatusMessage(statusCode) {
           const statusMessages = {
             200: "访问成功",
-            400: "访问失败",
-            401: "访问失败",
+            301: "账号未注册",
+            302: "访问成功",
+            400: "请求失败",
+            401: "请求失败",
             403: "账号已封禁",
             404: "未安装账号服务",
-            500: "访问失败",
-            502: "访问失败",
-            503: "访问失败",
-            504: "访问失败"
+            500: "请求失败",
+            502: "请求失败",
+            503: "请求失败",
+            504: "请求失败"
           };
           return statusMessages[statusCode];
         }
