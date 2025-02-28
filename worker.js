@@ -42,37 +42,48 @@ const statusMessages = {
 
 // 检查登录页面状态并记录
 async function checkLoginStatus(targetUrl, kvKey, historyKey, env) {
-  try {
-    // 访问目标 URL
-    const response = await fetch(targetUrl);
-    const statusCode = response.status;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
 
-    // 确保状态码存在于映射表中
+  try {
+    // 访问目标 URL，设置 signal 以支持超时
+    const response = await fetch(targetUrl, { signal: controller.signal });
+    clearTimeout(timeoutId); // 请求完成后清除超时
+
+    const statusCode = response.status;
     const statusMessage = statusMessages[statusCode] || `未知状态 (${statusCode})`;
 
-    // 获取上次的状态码
     const previousStatus = await env.LOGIN_STATUS.get(kvKey);
     console.log(`[${new Date().toISOString()}] ${targetUrl} - 状态码: ${statusCode} (${statusMessage}) (之前: ${previousStatus || '无'})`);
 
     // 记录历史状态
     await updateHistory(historyKey, statusCode, env);
 
-    // 如果状态码不是 200，则发送 Telegram 通知
+    // 如果状态码不是 200 或 302，则发送 Telegram 通知
     if (statusCode !== 200 && statusCode !== 302) {
       const user = env.USER_SERV00;
       await sendTelegramAlert(user, targetUrl, statusCode, statusMessage, env);
     }
 
     // 更新当前状态码
-    await env.LOGIN_STATUS.put(kvKey, String(statusCode));  
+    await env.LOGIN_STATUS.put(kvKey, String(statusCode));
 
     return new Response(`检测完成: ${targetUrl} - 状态码: ${statusCode} - ${statusMessage}`, { status: statusCode });
 
   } catch (error) {
-    console.error("访问失败:", error);
-    const user = env.USER_SERV00;
-    await sendTelegramAlert(user, targetUrl, "请求失败", "无法访问", env);
-    return new Response("请求失败", { status: 500 });
+    clearTimeout(timeoutId); // 确保清除超时
+
+    if (error.name === 'AbortError') {
+      console.error("访问超时:", error);
+      const user = env.USER_SERV00;
+      await sendTelegramAlert(user, targetUrl, "请求超时", "访问超过 10 秒", env);
+      return new Response("请求超时", { status: 504 });
+    } else {
+      console.error("访问失败:", error);
+      const user = env.USER_SERV00;
+      await sendTelegramAlert(user, targetUrl, "请求失败", "无法访问", env);
+      return new Response("请求失败", { status: 500 });
+    }
   }
 }
 
