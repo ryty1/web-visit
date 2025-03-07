@@ -1,7 +1,7 @@
 ## 1.	部署 Workers
    复制worker.js内容，粘贴到你新建的worker项目代码后部署，不多讲。
 
-   【注】：用worker项目，不要用pages。
+  【注】：用worker项目，不要用pages。
 ##
 ## 2.   在 Cloudflare KV 里添加 LOGIN_STATUS 命名空间
    项目绑定kv空间
