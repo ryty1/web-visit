@@ -1,6 +1,8 @@
 ## 1.	部署 Workers
    复制worker.js内容，粘贴到你新建的worker项目代码后部署，不多讲。
+
    【注】：用worker项目，不要用pages。
+
 ## 2.   在 Cloudflare KV 里添加 LOGIN_STATUS 命名空间
    项目绑定kv空间
 | 项目          | 值                  |
@@ -20,7 +22,9 @@
 
 ## 4.	设置 触发事件-Cloudflare Cron Triggers
    •	Cron 表达式：*/30 * * * *（每 30 分钟执行1次）自行设置数值
-     （默认为UST时区，北京时间要-8，如：北京时间7:55应设置为23:55）
+     
+   （默认为UST时区，北京时间要-8，如：北京时间7:55应设置为23:55）
+
    •	Cloudflare 会定期运行 Worker，自动检测状态。
 
 ## 5.	查看记录
