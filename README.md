@@ -1,6 +1,6 @@
 ## 1.	部署 Workers
    复制worker.js内容，粘贴到你新建的worker项目代码后部署，不多讲。
-
+   【注】：用worker项目，不要用pages。
 ## 2.   在 Cloudflare KV 里添加 LOGIN_STATUS 命名空间
    项目绑定kv空间
 | 项目          | 值                  |
@@ -12,14 +12,14 @@
 
 | 变量名          | 说明                 |
 |---------------|--------------------|
-| USER_SERV00   | 用户名               |
+| USER_SERV00   | 账号服务的账号               |
 | TG_BOT_TOKEN  | Telegram Bot Token  |
 | TG_CHAT_ID    | Telegram Chat ID    |
 
    •	    网页访问失败才会TG通知。
 
 ## 4.	设置 触发事件-Cloudflare Cron Triggers
-   •	Cron 表达式：*/5 * * * *（每 5 分钟执行）自行设置数值
+   •	Cron 表达式：*/30 * * * *（每 30 分钟执行1次）自行设置数值
 
    •	Cloudflare 会定期运行 Worker，自动检测状态。
 
