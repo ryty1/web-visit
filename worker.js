@@ -1,7 +1,6 @@
 export default {
-  // 定义 Cron Triggers 的事件处理程序
+  // 定义 Cron 触发任务
   async scheduled(event, env, ctx) {
-    // 每次 Cron 触发时执行的代码
     const user = env.USER_SERV00;
     const kvKey = `status:${user}`;
     const historyKey = `history:${user}`;
@@ -9,23 +8,20 @@ export default {
 
     console.log(`[${new Date().toISOString()}] 定时任务触发，检查状态：${targetUrl}`);
 
-    // 调用检查登录状态的函数
     await checkLoginStatus(targetUrl, kvKey, historyKey, env);
   },
 
-  // 请求处理
+  // 处理 HTTP 请求
   async fetch(request, env) {
     if (request.url.includes('/history')) {
-      return getHistory(env); // 返回历史记录
+      return getHistory(env);
     } else {
-      return new Response(htmlPage(), {
-        headers: { "Content-Type": "text/html" },
-      });
+      return new Response(htmlPage(), { headers: { "Content-Type": "text/html" } });
     }
   }
 };
 
-// 状态码映射到中文标识
+// 状态码映射
 const statusMessages = {
   200: "访问成功",
   301: "账号未注册",
@@ -40,66 +36,52 @@ const statusMessages = {
   504: "请求超时"
 };
 
-// 检查登录页面状态并记录
+// 检查网站状态
 async function checkLoginStatus(targetUrl, kvKey, historyKey, env) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   try {
-    // 访问目标 URL，设置 signal 以支持超时
     const response = await fetch(targetUrl, { signal: controller.signal });
-    clearTimeout(timeoutId); // 请求完成后清除超时
+    clearTimeout(timeoutId);
 
     const statusCode = response.status;
     const statusMessage = statusMessages[statusCode] || `未知状态 (${statusCode})`;
+    console.log(`[${new Date().toISOString()}] ${targetUrl} - 状态码: ${statusCode} (${statusMessage})`);
 
-    const previousStatus = await env.LOGIN_STATUS.get(kvKey);
-    console.log(`[${new Date().toISOString()}] ${targetUrl} - 状态码: ${statusCode} (${statusMessage}) (之前: ${previousStatus || '无'})`);
+    await Promise.all([
+      updateHistory(historyKey, statusCode, env),
+      env.LOGIN_STATUS.put(kvKey, String(statusCode))
+    ]);
 
-    // 记录历史状态
-    await updateHistory(historyKey, statusCode, env);
-
-    // 如果状态码不是 200 或 302，则发送 Telegram 通知
-    if (statusCode !== 200 && statusCode !== 302) {
-      const user = env.USER_SERV00;
-      await sendTelegramAlert(user, targetUrl, statusCode, statusMessage, env);
+    if (![200, 302].includes(statusCode)) {
+      await sendTelegramAlert(env.USER_SERV00, targetUrl, statusCode, statusMessage, env);
     }
-
-    // 更新当前状态码
-    await env.LOGIN_STATUS.put(kvKey, String(statusCode));
 
     return new Response(`检测完成: ${targetUrl} - 状态码: ${statusCode} - ${statusMessage}`, { status: statusCode });
-
   } catch (error) {
-    clearTimeout(timeoutId); // 确保清除超时
+    clearTimeout(timeoutId);
 
-    if (error.name === 'AbortError') {
-      console.error("访问超时:", error);
-      const user = env.USER_SERV00;
-      await sendTelegramAlert(user, targetUrl, "请求超时", "访问超过 10 秒", env);
-      return new Response("请求超时", { status: 504 });
-    } else {
-      console.error("访问失败:", error);
-      const user = env.USER_SERV00;
-      await sendTelegramAlert(user, targetUrl, "请求失败", "无法访问", env);
-      return new Response("请求失败", { status: 500 });
-    }
+    const user = env.USER_SERV00;
+    const errorMessage = error.name === 'AbortError' ? "访问超时" : "请求失败";
+    const statusCode = error.name === 'AbortError' ? 504 : 500;
+
+    console.error(`[${new Date().toISOString()}] ${errorMessage}:`, error);
+    await sendTelegramAlert(user, targetUrl, statusCode, errorMessage, env);
+
+    return new Response(errorMessage, { status: statusCode });
   }
 }
 
-// 更新历史状态
+// 记录历史状态
 async function updateHistory(historyKey, statusCode, env) {
   const maxHistory = 10;
   let history = await env.LOGIN_STATUS.get(historyKey);
   history = history ? JSON.parse(history) : [];
 
-  // 添加新记录
   history.push({ time: new Date().toISOString(), status: statusCode });
-
-  // 保持最多的历史记录数
   if (history.length > maxHistory) history.shift();
 
-  // 更新历史记录到 KV 存储
   await env.LOGIN_STATUS.put(historyKey, JSON.stringify(history));
 }
 
@@ -111,9 +93,7 @@ async function getHistory(env) {
   let history = await env.LOGIN_STATUS.get(historyKey);
   history = history ? JSON.parse(history) : [];
 
-  return new Response(JSON.stringify(history), {
-    headers: { "Content-Type": "application/json" },
-  });
+  return new Response(JSON.stringify(history), { headers: { "Content-Type": "application/json" } });
 }
 
 // 发送 Telegram 通知
@@ -129,37 +109,30 @@ async function sendTelegramAlert(user, targetUrl, statusCode, statusMessage, env
 📝 详情: ${statusMessage}
 ——————————————
 🕒 时间: ${timestamp}`;
-  // 设置 Inline Keyboard 按钮
+
   const inlineKeyboard = {
-    inline_keyboard: [
-      [
-        {
-          text: "手动前往",  // 按钮的文本
-          url: "$targetUrl"  // 按钮点击后的链接
-        }
-      ]
-    ]
+    inline_keyboard: [[{ text: "手动前往", url: targetUrl }]],
   };
 
   const tgUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
-  const payload = {
-    chat_id: chatId,
-    text: message,
-    reply_markup: JSON.stringify(inlineKeyboard),  // 添加 Inline Keyboard 按钮
-  };
+  const payload = { chat_id: chatId, text: message, reply_markup: JSON.stringify(inlineKeyboard) };
 
   try {
-    await fetch(tgUrl, {
+    const response = await fetch(tgUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+
+    if (!response.ok) {
+      console.error("Telegram API 请求失败:", await response.text());
+    }
   } catch (error) {
     console.error("Telegram 发送失败:", error);
   }
 }
 
-// HTML 页面内容
+// HTML 页面
 function htmlPage() {
   return `
     <!DOCTYPE html>
@@ -169,49 +142,14 @@ function htmlPage() {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>状态记录</title>
       <style>
-        body {
-          font-family: Arial, sans-serif;
-          background-color: #f4f4f4;
-          margin: 0;
-          padding: 20px;
-        }
-
-        h1 {
-          text-align: center;
-        }
-
-        .container {
-          max-width: 800px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #fff;
-          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-
-        table {
-          width: 100%;
-          border-collapse: collapse;
-          margin-top: 20px;
-        }
-
-        table, th, td {
-          border: 1px solid #ddd;
-        }
-
-        th, td {
-          padding: 10px;
-          text-align: left;
-        }
-
-        th {
-          background-color: #f2f2f2;
-        }
-
-        .loading {
-          text-align: center;
-          font-size: 18px;
-          color: #888;
-        }
+        body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px; }
+        h1 { text-align: center; }
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; background-color: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        table, th, td { border: 1px solid #ddd; }
+        th, td { padding: 10px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .loading { text-align: center; font-size: 18px; color: #888; }
       </style>
     </head>
     <body>
@@ -219,12 +157,7 @@ function htmlPage() {
         <h1>网页访问历史记录</h1>
         <div id="loading" class="loading">加载中...</div>
         <table id="historyTable">
-          <thead>
-            <tr>
-              <th>时间</th>
-              <th>状态</th>
-            </tr>
-          </thead>
+          <thead><tr><th>时间</th><th>状态</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -235,16 +168,12 @@ function htmlPage() {
           if (response.ok) {
             const history = await response.json();
             const tableBody = document.querySelector("#historyTable tbody");
-
-            // 清空表格
             tableBody.innerHTML = "";
 
             if (history.length === 0) {
               tableBody.innerHTML = "<tr><td colspan='2'>没有记录</td></tr>";
             } else {
-              // 倒序排列历史记录
-              history.reverse();
-              history.forEach(item => {
+              history.reverse().forEach(item => {
                 const row = document.createElement("tr");
                 row.innerHTML = "<td>" + new Date(item.time).toLocaleString() + "</td><td>" + getStatusMessage(item.status) + "</td>";
                 tableBody.appendChild(row);
@@ -257,20 +186,8 @@ function htmlPage() {
         }
 
         function getStatusMessage(statusCode) {
-          const statusMessages = {
-            200: "访问成功",
-            301: "账号未注册",
-            302: "访问成功",
-            400: "请求失败",
-            401: "请求失败",
-            403: "账号已封禁",
-            404: "未安装账号服务",
-            500: "请求失败",
-            502: "请求失败",
-            503: "请求失败",
-            504: "请求超时"
-          };
-          return statusMessages[statusCode];
+          const statusMessages = ${JSON.stringify(statusMessages)};
+          return statusMessages[statusCode] || "未知状态";
         }
 
         window.onload = fetchHistory;
