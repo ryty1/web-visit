@@ -129,11 +129,23 @@ async function sendTelegramAlert(user, targetUrl, statusCode, statusMessage, env
 📝 详情: ${statusMessage}
 ——————————————
 🕒 时间: ${timestamp}`;
+  // 设置 Inline Keyboard 按钮
+  const inlineKeyboard = {
+    inline_keyboard: [
+      [
+        {
+          text: "手动前往",  // 按钮的文本
+          url: "$targetUrl"  // 按钮点击后的链接
+        }
+      ]
+    ]
+  };
 
   const tgUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
   const payload = {
     chat_id: chatId,
     text: message,
+    reply_markup: JSON.stringify(inlineKeyboard),  // 添加 Inline Keyboard 按钮
   };
 
   try {
