@@ -41,47 +41,48 @@ async function checkLoginStatus(targetUrl, kvKey, historyKey, env) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
+  let statusCode, statusMessage;
+
   try {
     const response = await fetch(targetUrl, { signal: controller.signal });
     clearTimeout(timeoutId);
 
-    const statusCode = response.status;
-    const statusMessage = statusMessages[statusCode] || `未知状态 (${statusCode})`;
-    console.log(`[${new Date().toISOString()}] ${targetUrl} - 状态码: ${statusCode} (${statusMessage})`);
+    statusCode = response.status;
+    statusMessage = statusMessages[statusCode] || `未知状态 (${statusCode})`;
 
-    await Promise.all([
-      updateHistory(historyKey, statusCode, env),
-      env.LOGIN_STATUS.put(kvKey, String(statusCode))
-    ]);
-
-    if (![200, 302].includes(statusCode)) {
-      await sendTelegramAlert(env.USER_SERV00, targetUrl, statusCode, statusMessage, env);
-    }
-
-    return new Response(`检测完成: ${targetUrl} - 状态码: ${statusCode} - ${statusMessage}`, { status: statusCode });
   } catch (error) {
     clearTimeout(timeoutId);
 
-    const user = env.USER_SERV00;
-    const errorMessage = error.name === 'AbortError' ? "访问超时" : "请求失败";
-    const statusCode = error.name === 'AbortError' ? 504 : 500;
+    statusCode = error.name === 'AbortError' ? 504 : 500;
+    statusMessage = statusCode === 504 ? "访问超时" : "请求失败";
 
-    console.error(`[${new Date().toISOString()}] ${errorMessage}:`, error);
-    await sendTelegramAlert(user, targetUrl, statusCode, errorMessage, env);
-
-    return new Response(errorMessage, { status: statusCode });
+    console.error(`[${new Date().toISOString()}] ${targetUrl} - ${statusMessage}`);
   }
+
+  console.log(`[${new Date().toISOString()}] ${targetUrl} - 状态码: ${statusCode} (${statusMessage})`);
+
+  // **无论成功还是失败，都存入 KV**
+  await updateHistory(historyKey, statusCode, env);
+  await env.LOGIN_STATUS.put(kvKey, String(statusCode));
+
+  // **如果失败，发送 Telegram 通知**
+  if (![200, 302].includes(statusCode)) {
+    await sendTelegramAlert(env.USER_SERV00, targetUrl, statusCode, statusMessage, env);
+  }
+
+  return new Response(`检测完成: ${targetUrl} - 状态码: ${statusCode} - ${statusMessage}`, { status: statusCode });
 }
 
 // 记录历史状态
 async function updateHistory(historyKey, statusCode, env) {
-  const maxHistory = 10;
+  const maxHistory = 20;  // 增加历史记录保存数量
   let history = await env.LOGIN_STATUS.get(historyKey);
   history = history ? JSON.parse(history) : [];
 
   history.push({ time: new Date().toISOString(), status: statusCode });
   if (history.length > maxHistory) history.shift();
 
+  console.log(`更新历史记录: ${JSON.stringify(history)}`);  // ✅ 调试日志
   await env.LOGIN_STATUS.put(historyKey, JSON.stringify(history));
 }
 
@@ -168,14 +169,15 @@ function htmlPage() {
           if (response.ok) {
             const history = await response.json();
             const tableBody = document.querySelector("#historyTable tbody");
-            tableBody.innerHTML = "";
 
+            tableBody.innerHTML = "";
             if (history.length === 0) {
               tableBody.innerHTML = "<tr><td colspan='2'>没有记录</td></tr>";
             } else {
               history.reverse().forEach(item => {
                 const row = document.createElement("tr");
-                row.innerHTML = "<td>" + new Date(item.time).toLocaleString() + "</td><td>" + getStatusMessage(item.status) + "</td>";
+                const statusMessage = getStatusMessage(item.status) || \`未知状态 (\${item.status})\`;
+                row.innerHTML = \`<td>\${new Date(item.time).toLocaleString()}</td><td>\${statusMessage}</td>\`;
                 tableBody.appendChild(row);
               });
             }
@@ -187,7 +189,7 @@ function htmlPage() {
 
         function getStatusMessage(statusCode) {
           const statusMessages = ${JSON.stringify(statusMessages)};
-          return statusMessages[statusCode] || "未知状态";
+          return statusMessages[statusCode] || \`未知状态 (\${statusCode})\`;
         }
 
         window.onload = fetchHistory;
