@@ -4,7 +4,7 @@ export default {
     const user = env.USER_SERV00;
     const kvKey = `status:${user}`;
     const historyKey = `history:${user}`;
-    const targetUrl = `https://${user}.serv00.net/login`;
+    const targetUrl = `https://${user}.serv00.net/online`;
 
     console.log(`[${new Date().toISOString()}] 定时任务触发，检查状态：${targetUrl}`);
 
